@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0c10" />
+    <title>Wedding Reels</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="topbar" aria-label="App header">
+        <div class="topbar__title">
+          <div class="brand">Wedding Reels</div>
+          <div class="brand__sub">Scroll or swipe to watch</div>
+        </div>
+        <div class="topbar__actions">
+          <button id="cinemaBtn" class="iconbtn" type="button" aria-label="Hide captions" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 5c4.42 0 8.22 2.67 10 7-1.78 4.33-5.58 7-10 7S3.78 16.33 2 12c1.78-4.33 5.58-7 10-7Zm0 2c-3.45 0-6.48 1.98-8.06 5 1.58 3.02 4.61 5 8.06 5 3.45 0 6.48-1.98 8.06-5C18.48 8.98 15.45 7 12 7Zm0 2.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Z"
+              />
+            </svg>
+          </button>
+          <button id="shuffleBtn" class="iconbtn" type="button" aria-label="Shuffle playlist">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M16 3h5v5h-2V6.41l-3.3 3.3a1 1 0 0 1-1.4 0l-.3-.3a1 1 0 0 1 0-1.4L17.59 5H16V3ZM3 7a1 1 0 0 1 1-1h2.6a4 4 0 0 1 2.83 1.17l2.88 2.88a2 2 0 0 0 1.41.58H21v2h-6.28a4 4 0 0 1-2.83-1.17L9.01 8.58A2 2 0 0 0 7.6 8H4a1 1 0 0 1-1-1Zm18 9v5h-5v-2h1.59l-3.3-3.3a1 1 0 0 1 0-1.4l.3-.3a1 1 0 0 1 1.4 0l3.3 3.3V16h2ZM3 17a1 1 0 0 1 1-1h3.6a2 2 0 0 0 1.41-.58l.88-.88 1.41 1.41-.88.88A4 4 0 0 1 7.6 18H4a1 1 0 0 1-1-1Zm9.6-6.4 1.41 1.41-2.6 2.6A4 4 0 0 1 8.6 16H4v-2h4.6a2 2 0 0 0 1.41-.58l2.59-2.82Z"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <main id="reels" class="reels" tabindex="0" aria-label="Wedding videos"></main>
+
+      <div id="navfade" class="navfade" aria-hidden="true"></div>
+
+      <div id="sideprog" class="sideprog" aria-hidden="true">
+        <div class="sideprog__track"></div>
+        <div class="sideprog__thumb"></div>
+      </div>
+
+      <div id="hint" class="hint" aria-hidden="true">
+        <div class="hint__chevrons" aria-hidden="true">
+          <svg class="hint__chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+          </svg>
+          <svg class="hint__chevron hint__chevron--faint" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+          </svg>
+        </div>
+        <div class="hint__text">Swipe or scroll</div>
+      </div>
+
+      <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+      <div id="loading" class="scrim scrim--visible" aria-label="Loading">
+        <div class="scrim__card">
+          <div class="spinner" aria-hidden="true"></div>
+          <div class="scrim__title">Loading videos…</div>
+          <div class="scrim__sub">A little love in every frame</div>
+        </div>
+      </div>
+
+      <div id="error" class="scrim" aria-label="Error" hidden>
+        <div class="scrim__card">
+          <div class="scrim__title">Couldn’t load videos</div>
+          <div class="scrim__sub">
+            Make sure this site is served over HTTP(S), and that <code>data.bin</code> exists (or <code>data.json</code> in
+            development).
+          </div>
+          <div class="scrim__row">
+            <button id="retryBtn" class="btn" type="button">Retry</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="unlock" class="scrim" aria-label="Unlock" hidden>
+        <div class="scrim__card">
+          <div class="scrim__title">Enter password</div>
+          <div class="scrim__sub">This playlist is encrypted for privacy.</div>
+          <form id="unlockForm" class="unlock" autocomplete="off">
+            <label class="sr-only" for="passwordInput">Password</label>
+            <input
+              id="passwordInput"
+              class="field"
+              type="password"
+              inputmode="text"
+              autocomplete="current-password"
+              placeholder="Password"
+              required
+            />
+            <div class="unlock__row">
+              <button id="unlockBtn" class="btn" type="submit">Unlock</button>
+            </div>
+            <div id="unlockError" class="formerr" role="alert" hidden>Wrong password. Try again.</div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <template id="reelTemplate">
+      <section class="reel" aria-label="Video reel">
+        <div class="reel__media">
+          <iframe
+            class="reel__iframe"
+            title="Wedding video"
+            loading="lazy"
+            allow="autoplay; fullscreen"
+            allowfullscreen
+            referrerpolicy="no-referrer"
+          ></iframe>
+          <div class="reel__fade"></div>
+          <div class="reel__loading" aria-hidden="true">
+            <div class="reel__loadingCard">
+              <div class="spinner spinner--sm" aria-hidden="true"></div>
+              <div class="reel__loadingText">Loading…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="reel__hud">
+          <div class="reel__meta">
+            <div class="reel__kicker">Wedding video</div>
+            <h2 class="reel__title"></h2>
+            <p class="reel__desc"></p>
+
+            <button class="upnext" type="button" data-action="next" aria-label="Next video">
+              <span class="upnext__kicker">Up next</span>
+              <span class="upnext__row">
+                <span class="upnext__title"></span>
+                <svg class="upnext__arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9.29 6.71a1 1 0 0 1 1.42 0L16 12l-5.29 5.29a1 1 0 1 1-1.42-1.42L13.17 12 9.29 8.12a1 1 0 0 1 0-1.41Z" />
+                </svg>
+              </span>
+            </button>
+          </div>
+
+          <div class="reel__rail" aria-label="Actions">
+            <button class="railbtn" type="button" data-action="open" aria-label="Open in Google Drive">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M14 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9h-2v9H5V5h9V3Zm7 0h-6a1 1 0 0 0-1 1v6h2V6.41l-8.29 8.3 1.41 1.41 8.3-8.29V10h2V4a1 1 0 0 0-1-1Z"
+                />
+              </svg>
+              <span class="railbtn__label">Open</span>
+            </button>
+
+            <button class="railbtn" type="button" data-action="share" aria-label="Copy link">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M15 8a3 3 0 1 0-2.83-4H12a3 3 0 0 0 0 6c.33 0 .65-.05.95-.15l3.08 3.08a3 3 0 0 0 0 2.14l-3.08 3.08c-.3-.1-.62-.15-.95-.15a3 3 0 1 0 2.83 2H15a3 3 0 0 0 0-6c-.33 0-.65.05-.95.15l-3.08-3.08a3 3 0 0 0 0-2.14l3.08-3.08c.3.1.62.15.95.15Z"
+                />
+              </svg>
+              <span class="railbtn__label">Share</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="reel__progress" aria-hidden="true">
+          <span class="reel__count"></span>
+        </div>
+      </section>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
