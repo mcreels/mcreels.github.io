@@ -187,6 +187,12 @@ code {
 
 .iconbtn--update {
   position: relative;
+  width: auto;
+  padding: 0 14px 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .iconbtn--update::after {
@@ -200,6 +206,15 @@ code {
   background: rgba(250, 214, 165, 0.95);
   box-shadow: 0 0 0 2px rgba(15, 17, 23, 0.55), 0 0 0 6px rgba(250, 214, 165, 0.18);
   animation: updateDot 1200ms ease-in-out infinite;
+}
+
+.iconbtn__text {
+  font-size: 13px;
+  letter-spacing: 0.15px;
+  font-weight: 650;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
 }
 
 .iconbtn--spin svg {
