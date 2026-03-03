@@ -48,6 +48,7 @@ Note: an API key does **not** grant access to private files. Your Drive files st
 ## Production data (`data.bin`)
 
 In production, the app loads `data.bin` and prompts for a password to decrypt it in the browser.
+The password is remembered locally for 24 hours.
 
 Generate `data.bin` from your local `data.json`:
 
@@ -80,7 +81,11 @@ This site is installable (service worker + web app manifest).
 - iPhone/iPad (Safari): Share → **Add to Home Screen**
 - Desktop Chrome/Edge: “Install” icon in the address bar
 
-Note: the app shell can work offline, but the videos themselves still require a network connection.
+Note: the app shell works offline. Videos are cached after you watch them once (storage permitting), so they can play offline later.
+
+### Updates
+
+The app checks for updates automatically. If an update can’t be applied immediately, a refresh icon appears in the top-right — tap it to update.
 
 ### App icon
 
@@ -94,6 +99,7 @@ bash scripts/generate-icons.sh path/to/icon.png
 
 - Scroll / trackpad / swipe: previous/next reel
 - Keyboard: `↑`/`↓`, `PageUp`/`PageDown`, `j`/`k`, `Space`
+- Tap video while playing: mute/unmute (remembered)
 - “Up next” pill: tap to advance
 - Top-right buttons:
   - Eye: hide/show captions (cinema mode)

@@ -6,6 +6,10 @@
   const BIN_MAGIC = "WREELS";
   const BIN_VERSION = 1;
   const CINEMA_STORAGE_KEY = "weddingReels.cinema";
+  const FAVORITES_STORAGE_KEY = "weddingReels.favorites";
+  const PASSWORD_STORAGE_KEY = "weddingReels.password";
+  const PASSWORD_TTL_MS = 24 * 60 * 60 * 1000;
+  const MUTED_STORAGE_KEY = "weddingReels.muted";
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -22,6 +26,7 @@
   const retryBtn = document.getElementById("retryBtn");
   const cinemaBtn = document.getElementById("cinemaBtn");
   const shuffleBtn = document.getElementById("shuffleBtn");
+  const updateBtn = document.getElementById("updateBtn");
   const sideprogEl = document.getElementById("sideprog");
   const hintEl = document.getElementById("hint");
   const navfadeEl = document.getElementById("navfade");
@@ -35,6 +40,9 @@
   let binCache = null;
   /** @type {string | null} */
   let driveApiKey = null;
+  /** @type {Set<string>} */
+  let favorites = new Set();
+  let muted = true;
 
   /** @type {{id: string, title: string, description: string}[]} */
   let playlist = [];
@@ -52,6 +60,9 @@
   let hintHidden = false;
   /** @type {number | null} */
   let hintTimer = null;
+  /** @type {ServiceWorkerRegistration | null} */
+  let swReg = null;
+  let swUpdateAvailable = false;
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
@@ -63,6 +74,177 @@
     toastEl.classList.add("toast--visible");
     if (toastTimer) window.clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => toastEl.classList.remove("toast--visible"), 1400);
+  }
+
+  function readFavorites() {
+    try {
+      const raw = window.localStorage?.getItem(FAVORITES_STORAGE_KEY);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      const ids = parsed
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      return new Set(ids);
+    } catch {
+      return new Set();
+    }
+  }
+
+  function writeFavorites() {
+    try {
+      window.localStorage?.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(Array.from(favorites)));
+    } catch {
+      // ignore
+    }
+  }
+
+  favorites = readFavorites();
+
+  function readMutedPreference() {
+    try {
+      const raw = window.localStorage?.getItem(MUTED_STORAGE_KEY);
+      if (raw === "0") return false;
+      if (raw === "1") return true;
+    } catch {
+      // ignore
+    }
+    return true;
+  }
+
+  function writeMutedPreference(value) {
+    try {
+      window.localStorage?.setItem(MUTED_STORAGE_KEY, value ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }
+
+  function applyMutedPreference(videoEl) {
+    if (!videoEl) return;
+    videoEl.muted = muted;
+    if (muted) videoEl.setAttribute("muted", "");
+    else videoEl.removeAttribute("muted");
+  }
+
+  muted = readMutedPreference();
+
+  function clearStoredPassword() {
+    try {
+      window.localStorage?.removeItem(PASSWORD_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  function readStoredPassword() {
+    try {
+      const raw = window.localStorage?.getItem(PASSWORD_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+
+      const password = typeof parsed.password === "string" ? parsed.password : "";
+      const expiresAt = typeof parsed.expiresAt === "number" ? parsed.expiresAt : 0;
+      if (!password || !Number.isFinite(expiresAt)) return null;
+
+      if (Date.now() > expiresAt) {
+        clearStoredPassword();
+        return null;
+      }
+
+      return password;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeStoredPassword(password) {
+    if (!password) return;
+    try {
+      window.localStorage?.setItem(
+        PASSWORD_STORAGE_KEY,
+        JSON.stringify({ password, expiresAt: Date.now() + PASSWORD_TTL_MS }),
+      );
+    } catch {
+      // ignore
+    }
+  }
+
+  function setUpdateAvailable(available) {
+    swUpdateAvailable = available;
+    if (!updateBtn) return;
+    updateBtn.hidden = !available;
+  }
+
+  function applyServiceWorkerUpdate() {
+    if (!swReg?.waiting) return;
+    setUpdateAvailable(false);
+    toast("Updating…");
+    try {
+      swReg.waiting.postMessage({ type: "SKIP_WAITING" });
+    } catch {
+      // ignore
+    }
+  }
+
+  function setupServiceWorkerUpdates() {
+    if (!("serviceWorker" in navigator)) return;
+
+    let wasControlled = Boolean(navigator.serviceWorker.controller);
+    let refreshing = false;
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!wasControlled) {
+        wasControlled = true;
+        return;
+      }
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+
+    navigator.serviceWorker
+      .register("./sw.js")
+      .then((reg) => {
+        swReg = reg;
+
+        const offerUpdate = () => {
+          if (!navigator.serviceWorker.controller) return;
+          if (!reg.waiting) return;
+          if (swUpdateAvailable) return;
+          setUpdateAvailable(true);
+          toast("Update ready");
+        };
+
+        offerUpdate();
+
+        reg.addEventListener("updatefound", () => {
+          const worker = reg.installing;
+          if (!worker) return;
+          worker.addEventListener("statechange", () => {
+            if (worker.state !== "installed") return;
+            offerUpdate();
+          });
+        });
+
+        const check = () => reg.update().catch(() => {});
+        check();
+        window.setInterval(check, 60 * 60 * 1000);
+
+        document.addEventListener(
+          "visibilitychange",
+          () => {
+            if (!document.hidden) check();
+            if (document.hidden && reg.waiting) applyServiceWorkerUpdate();
+          },
+          { passive: true },
+        );
+      })
+      .catch(() => {
+        // ignore
+      });
   }
 
   function pulseNavFade() {
@@ -342,6 +524,30 @@
     const payload = parseBinPayload(binBytes);
     let errorMessage = "";
 
+    async function tryDecrypt(password) {
+      const key = await deriveKeyFromPassword({
+        password,
+        salt: payload.salt,
+        iterations: payload.iterations,
+      });
+      const plainBuf = await subtle.decrypt({ name: "AES-GCM", iv: payload.iv }, key, payload.ciphertext);
+      const text = decoder.decode(new Uint8Array(plainBuf));
+      return JSON.parse(text);
+    }
+
+    const storedPassword = readStoredPassword();
+    if (storedPassword) {
+      try {
+        const json = await tryDecrypt(storedPassword);
+        writeStoredPassword(storedPassword);
+        if (unlockError) unlockError.hidden = true;
+        setScrimState({ loading: true, error: false, unlock: false });
+        return json;
+      } catch {
+        clearStoredPassword();
+      }
+    }
+
     while (true) {
       const password = await promptForPassword({ errorMessage });
       if (!password) {
@@ -350,14 +556,8 @@
       }
 
       try {
-        const key = await deriveKeyFromPassword({
-          password,
-          salt: payload.salt,
-          iterations: payload.iterations,
-        });
-        const plainBuf = await subtle.decrypt({ name: "AES-GCM", iv: payload.iv }, key, payload.ciphertext);
-        const text = decoder.decode(new Uint8Array(plainBuf));
-        const json = JSON.parse(text);
+        const json = await tryDecrypt(password);
+        writeStoredPassword(password);
 
         passwordInput.value = "";
         if (unlockError) unlockError.hidden = true;
@@ -496,8 +696,10 @@
             });
           return;
         }
-        videoEl.muted = !videoEl.muted;
-        toast(videoEl.muted ? "Muted" : "Sound on");
+        muted = !muted;
+        writeMutedPreference(muted);
+        applyMutedPreference(videoEl);
+        toast(muted ? "Muted" : "Sound on");
       });
       videoEl.addEventListener("playing", () => node.classList.remove("reel--needsTap"));
       videoEl.addEventListener("pause", () => {
@@ -604,6 +806,23 @@
     const countEl = node.querySelector(".reel__count");
     countEl.textContent = `${index + 1} / ${total}`;
 
+    const heartBtn = node.querySelector('[data-action="heart"]');
+    function updateHeartUi() {
+      if (!heartBtn) return;
+      const isOn = favorites.has(video.id);
+      heartBtn.setAttribute("aria-pressed", String(isOn));
+      heartBtn.setAttribute("aria-label", isOn ? "Remove from favorites" : "Add to favorites");
+    }
+    updateHeartUi();
+    heartBtn?.addEventListener("click", () => {
+      const isOn = favorites.has(video.id);
+      if (isOn) favorites.delete(video.id);
+      else favorites.add(video.id);
+      writeFavorites();
+      updateHeartUi();
+      toast(isOn ? "Removed" : "Saved");
+    });
+
     const openBtn = node.querySelector('[data-action="open"]');
     openBtn?.addEventListener("click", () => {
       window.open(buildDriveOpenUrl(video.id), "_blank", "noopener,noreferrer");
@@ -611,19 +830,34 @@
 
     const shareBtn = node.querySelector('[data-action="share"]');
     shareBtn?.addEventListener("click", async () => {
-      try {
-        const url = new URL(window.location.href);
-        url.hash = `v=${encodeURIComponent(video.id)}`;
-        if (navigator.share) {
-          await navigator.share({ title: video.title, text: video.description || "", url: url.toString() });
+      const url = new URL(window.location.href);
+      url.hash = `v=${encodeURIComponent(video.id)}`;
+      const shareUrl = url.toString();
+      const shareData = { title: video.title, text: video.description || "", url: shareUrl };
+
+      if (navigator.share) {
+        try {
+          await navigator.share(shareData);
           return;
+        } catch (err) {
+          const name = err && typeof err === "object" && "name" in err ? String(err.name) : "";
+          if (name === "AbortError") return;
+          // Fall back to copy link.
         }
+      }
+
+      try {
         if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(url.toString());
+          await navigator.clipboard.writeText(shareUrl);
           toast("Link copied");
           return;
         }
-        window.prompt("Copy this link:", url.toString());
+      } catch {
+        // ignore
+      }
+
+      try {
+        window.prompt("Copy this link:", shareUrl);
       } catch {
         toast("Couldn’t share link");
       }
@@ -696,7 +930,7 @@
       videoEl.pause?.();
       if (videoEl.getAttribute?.("src")) videoEl.removeAttribute("src");
       videoEl.load?.();
-      videoEl.muted = true;
+      applyMutedPreference(videoEl);
     }
   }
 
@@ -732,7 +966,7 @@
       reel.classList.remove("reel--loading");
       return;
     }
-    videoEl.muted = true;
+    applyMutedPreference(videoEl);
     if (videoEl.getAttribute("src") !== src) videoEl.setAttribute("src", src);
     videoEl.load?.();
     void videoEl.play?.().catch(() => {
@@ -886,6 +1120,7 @@
     }
     init({ reshuffle: true });
   });
+  updateBtn?.addEventListener("click", () => applyServiceWorkerUpdate());
   cinemaBtn?.addEventListener("click", () => {
     const enabled = appEl?.classList?.contains("app--cinema") ?? false;
     setCinemaMode(!enabled);
@@ -909,13 +1144,7 @@
     );
   }
 
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch(() => {
-        // ignore
-      });
-    });
-  }
+  setupServiceWorkerUpdates();
 
   init();
 })();
