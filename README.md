@@ -73,6 +73,23 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000`.
 
+## Install as an app (PWA)
+
+This site is installable (service worker + web app manifest).
+
+- iPhone/iPad (Safari): Share → **Add to Home Screen**
+- Desktop Chrome/Edge: “Install” icon in the address bar
+
+Note: the app shell can work offline, but the videos themselves still require a network connection.
+
+### App icon
+
+Regenerate PWA icons from a source image:
+
+```bash
+bash scripts/generate-icons.sh path/to/icon.png
+```
+
 ## Controls
 
 - Scroll / trackpad / swipe: previous/next reel

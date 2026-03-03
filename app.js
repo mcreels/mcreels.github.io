@@ -445,6 +445,13 @@
 
     const videoEl = node.querySelector(".reel__video");
     if (videoEl) {
+      const SCRUB_THRESHOLD_PX = 12;
+      const SCRUB_SECONDS_PER_SCREEN = 30;
+
+      let lastScrubEndAt = 0;
+      /** @type {{pointerId: number, startX: number, startY: number, startTime: number, active: boolean} | null} */
+      let scrub = null;
+
       const apiSrc = buildDriveApiMediaUrl(video.id);
       const fallbackSrc = buildDriveDownloadUrl(video.id);
       videoEl.dataset.apiSrc = apiSrc;
@@ -479,6 +486,7 @@
         toast("Couldn't play — tap Open");
       });
       videoEl.addEventListener("click", () => {
+        if (Date.now() - lastScrubEndAt < 450) return;
         if (videoEl.paused) {
           void videoEl.play()
             .then(() => node.classList.remove("reel--needsTap"))
@@ -495,6 +503,83 @@
       videoEl.addEventListener("pause", () => {
         if (!node.classList.contains("reel--active")) return;
         node.classList.add("reel--needsTap");
+      });
+      videoEl.addEventListener("pointerdown", (event) => {
+        if (!node.classList.contains("reel--active")) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        scrub = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          startTime: Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0,
+          active: false,
+        };
+      });
+      videoEl.addEventListener(
+        "pointermove",
+        (event) => {
+          if (!scrub) return;
+          if (event.pointerId !== scrub.pointerId) return;
+
+          const dx = event.clientX - scrub.startX;
+          const dy = event.clientY - scrub.startY;
+
+          if (!scrub.active) {
+            if (Math.abs(dx) < SCRUB_THRESHOLD_PX && Math.abs(dy) < SCRUB_THRESHOLD_PX) return;
+            if (Math.abs(dx) < Math.abs(dy)) {
+              scrub = null;
+              return;
+            }
+            scrub.active = true;
+            scrub.startTime = Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
+            node.classList.add("reel--scrubbing");
+            videoEl.pause?.();
+            try {
+              videoEl.setPointerCapture?.(event.pointerId);
+            } catch {
+              // ignore
+            }
+          }
+
+          if (!scrub.active) return;
+
+          event.preventDefault();
+
+          const duration = videoEl.duration;
+          if (!Number.isFinite(duration) || duration <= 0) return;
+
+          const width = Math.max(320, window.innerWidth || 0, videoEl.clientWidth || 0, 1);
+          const deltaSeconds = (dx / width) * SCRUB_SECONDS_PER_SCREEN;
+          const target = clamp(scrub.startTime + deltaSeconds, 0, Math.max(0, duration - 0.01));
+          if (!Number.isFinite(target)) return;
+
+          try {
+            videoEl.currentTime = target;
+          } catch {
+            // ignore
+          }
+        },
+        { passive: false },
+      );
+      videoEl.addEventListener("pointerup", (event) => {
+        if (!scrub) return;
+        if (event.pointerId !== scrub.pointerId) return;
+
+        const shouldResume = scrub.active;
+        scrub = null;
+        node.classList.remove("reel--scrubbing");
+
+        if (!shouldResume) return;
+        lastScrubEndAt = Date.now();
+        void videoEl.play()
+          .then(() => node.classList.remove("reel--needsTap"))
+          .catch(() => node.classList.add("reel--needsTap"));
+      });
+      videoEl.addEventListener("pointercancel", (event) => {
+        if (!scrub) return;
+        if (event.pointerId !== scrub.pointerId) return;
+        scrub = null;
+        node.classList.remove("reel--scrubbing");
       });
     }
 
@@ -604,6 +689,7 @@
     reel.classList.remove("reel--active");
     reel.classList.remove("reel--loading");
     reel.classList.remove("reel--needsTap");
+    reel.classList.remove("reel--scrubbing");
     const videoEl = reel.querySelector?.(".reel__video");
 
     if (videoEl) {
@@ -620,6 +706,7 @@
     reel.classList.add("reel--active");
     reel.classList.add("reel--loading");
     reel.classList.remove("reel--needsTap");
+    reel.classList.remove("reel--scrubbing");
 
     const videoEl = reel.querySelector?.(".reel__video");
 
@@ -820,6 +907,14 @@
       },
       { passive: true },
     );
+  }
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {
+        // ignore
+      });
+    });
   }
 
   init();
