@@ -103,19 +103,29 @@
     <template id="reelTemplate">
       <section class="reel" aria-label="Video reel">
         <div class="reel__media">
-          <iframe
-            class="reel__iframe"
-            title="Wedding video"
-            loading="lazy"
-            allow="autoplay; fullscreen"
-            allowfullscreen
-            referrerpolicy="no-referrer"
-          ></iframe>
+          <video
+            class="reel__video"
+            playsinline
+            webkit-playsinline
+            autoplay
+            muted
+            loop
+            preload="metadata"
+            aria-label="Wedding video"
+          ></video>
           <div class="reel__fade"></div>
           <div class="reel__loading" aria-hidden="true">
             <div class="reel__loadingCard">
               <div class="spinner spinner--sm" aria-hidden="true"></div>
               <div class="reel__loadingText">Loading…</div>
+            </div>
+          </div>
+          <div class="reel__tap" aria-hidden="true">
+            <div class="reel__tapCard">
+              <svg class="reel__tapIcon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 18V6l10 6-10 6Z" />
+              </svg>
+              <div class="reel__tapText">Tap to play</div>
             </div>
           </div>
         </div>

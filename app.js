@@ -31,10 +31,10 @@
 
   /** @type {{id: string, title: string, description: string}[]} */
   let library = [];
-  /** @type {"json" | "bin" | null} */
-  let librarySource = null;
   /** @type {Uint8Array | null} */
   let binCache = null;
+  /** @type {string | null} */
+  let driveApiKey = null;
 
   /** @type {{id: string, title: string, description: string}[]} */
   let playlist = [];
@@ -122,14 +122,21 @@
     return arr;
   }
 
-  function buildDrivePreviewUrl(id) {
-    const safeId = encodeURIComponent(id);
-    return `https://drive.google.com/file/d/${safeId}/preview?controls=0&showinfo=0&autoplay=1&loop=1`;
-  }
-
   function buildDriveOpenUrl(id) {
     const safeId = encodeURIComponent(id);
     return `https://drive.google.com/file/d/${safeId}/view`;
+  }
+
+  function buildDriveDownloadUrl(id) {
+    const safeId = encodeURIComponent(id);
+    return `https://drive.google.com/uc?export=download&id=${safeId}`;
+  }
+
+  function buildDriveApiMediaUrl(id) {
+    if (!driveApiKey) return "";
+    const safeId = encodeURIComponent(id);
+    const safeKey = encodeURIComponent(driveApiKey);
+    return `https://www.googleapis.com/drive/v3/files/${safeId}?alt=media&supportsAllDrives=true&key=${safeKey}`;
   }
 
   function parseInitialTarget(videos) {
@@ -213,22 +220,48 @@
     return { id, title, description };
   }
 
+  function applyLibraryConfig(payload) {
+    const key = typeof payload?.driveApiKey === "string" ? payload.driveApiKey.trim() : "";
+    driveApiKey = key || null;
+  }
+
   function getSourcePreference() {
     const value = new URLSearchParams(window.location.search).get("source");
     if (value === "json" || value === "bin") return value;
     return null;
   }
 
+  function isLikelyDevHost() {
+    const host = (window.location.hostname || "").trim();
+    if (!host) return true;
+    if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+    if (host.endsWith(".local")) return true;
+
+    const match = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+    if (!match) return false;
+
+    const a = Number.parseInt(match[1], 10);
+    const b = Number.parseInt(match[2], 10);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+
   function resetLibrary() {
     library = [];
-    librarySource = null;
     binCache = null;
+    driveApiKey = null;
   }
 
   async function loadVideosFromJson() {
     const res = await fetch(JSON_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`Failed to fetch ${JSON_URL} (${res.status})`);
     const json = await res.json();
+    applyLibraryConfig(json);
     const rawVideos = Array.isArray(json?.videos) ? json.videos : null;
     if (!rawVideos?.length) throw new Error(`No videos found in ${JSON_URL}`);
 
@@ -344,6 +377,7 @@
     }
 
     const json = await decryptBinToJson(binCache);
+    applyLibraryConfig(json);
     const rawVideos = Array.isArray(json?.videos) ? json.videos : null;
     if (!rawVideos?.length) throw new Error(`No videos found in ${BIN_URL}`);
 
@@ -358,22 +392,28 @@
     const pref = getSourcePreference();
     if (pref === "json") {
       library = await loadVideosFromJson();
-      librarySource = "json";
       return library;
     }
     if (pref === "bin") {
       library = await loadVideosFromBin();
-      librarySource = "bin";
       return library;
     }
 
+    if (isLikelyDevHost()) {
+      try {
+        library = await loadVideosFromJson();
+        return library;
+      } catch {
+        library = await loadVideosFromBin();
+        return library;
+      }
+    }
+
     try {
-      library = await loadVideosFromJson();
-      librarySource = "json";
+      library = await loadVideosFromBin();
       return library;
     } catch {
-      library = await loadVideosFromBin();
-      librarySource = "bin";
+      library = await loadVideosFromJson();
       return library;
     }
   }
@@ -403,15 +443,60 @@
     const node = reelTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.index = String(index);
 
-    const iframe = node.querySelector(".reel__iframe");
-    iframe.dataset.preview = buildDrivePreviewUrl(video.id);
-    iframe.title = `Wedding video: ${video.title}`;
-    iframe.addEventListener("load", () => {
-      const preview = iframe.dataset.preview;
-      if (!preview) return;
-      if (iframe.getAttribute("src") !== preview) return;
-      node.classList.remove("reel--loading");
-    });
+    const videoEl = node.querySelector(".reel__video");
+    if (videoEl) {
+      const apiSrc = buildDriveApiMediaUrl(video.id);
+      const fallbackSrc = buildDriveDownloadUrl(video.id);
+      videoEl.dataset.apiSrc = apiSrc;
+      videoEl.dataset.fallbackSrc = fallbackSrc;
+      videoEl.dataset.fallbackTried = "0";
+      videoEl.dataset.src = apiSrc || fallbackSrc;
+      videoEl.setAttribute("aria-label", `Wedding video: ${video.title}`);
+      videoEl.addEventListener("loadeddata", () => {
+        const src = videoEl.getAttribute("src");
+        if (!src) return;
+        if (src !== videoEl.dataset.src) return;
+        node.classList.remove("reel--loading");
+      });
+      videoEl.addEventListener("error", () => {
+        const src = videoEl.getAttribute("src") || "";
+        if (!src) return;
+        if (videoEl.dataset.fallbackTried === "1") return;
+
+        const api = videoEl.dataset.apiSrc || "";
+        const fallback = videoEl.dataset.fallbackSrc || "";
+        if (api && fallback && src === api) {
+          videoEl.dataset.fallbackTried = "1";
+          videoEl.dataset.src = fallback;
+          videoEl.setAttribute("src", fallback);
+          videoEl.load?.();
+          void videoEl.play?.().catch(() => {
+            // ignore
+          });
+          toast("Trying fallback…");
+          return;
+        }
+        toast("Couldn't play — tap Open");
+      });
+      videoEl.addEventListener("click", () => {
+        if (videoEl.paused) {
+          void videoEl.play()
+            .then(() => node.classList.remove("reel--needsTap"))
+            .catch(() => {
+              node.classList.add("reel--needsTap");
+              toast("Tap to play");
+            });
+          return;
+        }
+        videoEl.muted = !videoEl.muted;
+        toast(videoEl.muted ? "Muted" : "Sound on");
+      });
+      videoEl.addEventListener("playing", () => node.classList.remove("reel--needsTap"));
+      videoEl.addEventListener("pause", () => {
+        if (!node.classList.contains("reel--active")) return;
+        node.classList.add("reel--needsTap");
+      });
+    }
 
     const titleEl = node.querySelector(".reel__title");
     titleEl.textContent = video.title;
@@ -435,15 +520,15 @@
     countEl.textContent = `${index + 1} / ${total}`;
 
     const openBtn = node.querySelector('[data-action="open"]');
-    openBtn.addEventListener("click", () => {
+    openBtn?.addEventListener("click", () => {
       window.open(buildDriveOpenUrl(video.id), "_blank", "noopener,noreferrer");
     });
 
     const shareBtn = node.querySelector('[data-action="share"]');
-    shareBtn.addEventListener("click", async () => {
+    shareBtn?.addEventListener("click", async () => {
       try {
         const url = new URL(window.location.href);
-        url.hash = `v=${video.id}`;
+        url.hash = `v=${encodeURIComponent(video.id)}`;
         if (navigator.share) {
           await navigator.share({ title: video.title, text: video.description || "", url: url.toString() });
           return;
@@ -518,21 +603,26 @@
     if (!reel) return;
     reel.classList.remove("reel--active");
     reel.classList.remove("reel--loading");
-    const iframe = reel.querySelector?.(".reel__iframe");
-    if (iframe) iframe.loading = "lazy";
-    if (iframe?.getAttribute?.("src")) iframe.removeAttribute("src");
+    reel.classList.remove("reel--needsTap");
+    const videoEl = reel.querySelector?.(".reel__video");
+
+    if (videoEl) {
+      videoEl.pause?.();
+      if (videoEl.getAttribute?.("src")) videoEl.removeAttribute("src");
+      videoEl.load?.();
+      videoEl.muted = true;
+    }
   }
 
   function loadReel(index) {
     const reel = reelsEl.children[index];
     if (!reel) return;
     reel.classList.add("reel--active");
-    const iframe = reel.querySelector?.(".reel__iframe");
-    if (!iframe) return;
-    const preview = iframe.dataset.preview;
-    if (!preview) return;
-    iframe.loading = "eager";
     reel.classList.add("reel--loading");
+    reel.classList.remove("reel--needsTap");
+
+    const videoEl = reel.querySelector?.(".reel__video");
+
     const loadToken = String(Date.now());
     reel.dataset.loadToken = loadToken;
     window.setTimeout(() => {
@@ -545,7 +635,23 @@
         loadHelpToastShown = true;
       }
     }, 12000);
-    if (iframe.getAttribute("src") !== preview) iframe.setAttribute("src", preview);
+
+    if (!videoEl) {
+      reel.classList.remove("reel--loading");
+      return;
+    }
+    const src = videoEl.dataset.src;
+    if (!src) {
+      reel.classList.remove("reel--loading");
+      return;
+    }
+    videoEl.muted = true;
+    if (videoEl.getAttribute("src") !== src) videoEl.setAttribute("src", src);
+    videoEl.load?.();
+    void videoEl.play?.().catch(() => {
+      // iOS may require a gesture; keep the reel visible and let the user tap.
+      reel.classList.add("reel--needsTap");
+    });
   }
 
   function scrollToIndex(index, behavior = prefersReducedMotion ? "auto" : "smooth") {

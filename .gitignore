@@ -2,3 +2,4 @@ data.json
 *.log
 .DS_Store
 
+api.key
