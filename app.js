@@ -647,8 +647,13 @@
     if (videoEl) {
       const SCRUB_THRESHOLD_PX = 12;
       const SCRUB_SECONDS_PER_SCREEN = 30;
+      const DOUBLE_TAP_MS = 280;
 
       let lastScrubEndAt = 0;
+      let lastTapAt = 0;
+      let lastTapMuted = muted;
+      /** @type {number | null} */
+      let muteToastTimer = null;
       /** @type {{pointerId: number, startX: number, startY: number, startTime: number, active: boolean} | null} */
       let scrub = null;
 
@@ -685,21 +690,56 @@
         }
         toast("Couldn't play — tap Open");
       });
+      function playWithFeedback() {
+        void videoEl.play()
+          .then(() => node.classList.remove("reel--needsTap"))
+          .catch(() => {
+            node.classList.add("reel--needsTap");
+            toast("Tap to play");
+          });
+      }
+
       videoEl.addEventListener("click", () => {
         if (Date.now() - lastScrubEndAt < 450) return;
-        if (videoEl.paused) {
-          void videoEl.play()
-            .then(() => node.classList.remove("reel--needsTap"))
-            .catch(() => {
-              node.classList.add("reel--needsTap");
-              toast("Tap to play");
-            });
+
+        const now = Date.now();
+        const isDoubleTap = Boolean(lastTapAt && now - lastTapAt < DOUBLE_TAP_MS);
+
+        if (isDoubleTap) {
+          lastTapAt = 0;
+
+          if (muteToastTimer) {
+            window.clearTimeout(muteToastTimer);
+            muteToastTimer = null;
+          }
+
+          muted = lastTapMuted;
+          writeMutedPreference(muted);
+          applyMutedPreference(videoEl);
+
+          if (videoEl.paused) playWithFeedback();
+          else videoEl.pause?.();
           return;
         }
+
+        lastTapAt = now;
+        lastTapMuted = muted;
+
+        if (videoEl.paused) {
+          playWithFeedback();
+          return;
+        }
+
         muted = !muted;
         writeMutedPreference(muted);
         applyMutedPreference(videoEl);
-        toast(muted ? "Muted" : "Sound on");
+
+        if (muteToastTimer) window.clearTimeout(muteToastTimer);
+        const message = muted ? "Muted" : "Sound on";
+        muteToastTimer = window.setTimeout(() => {
+          muteToastTimer = null;
+          toast(message);
+        }, DOUBLE_TAP_MS);
       });
       videoEl.addEventListener("playing", () => node.classList.remove("reel--needsTap"));
       videoEl.addEventListener("pause", () => {

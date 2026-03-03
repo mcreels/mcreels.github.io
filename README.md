@@ -100,6 +100,7 @@ bash scripts/generate-icons.sh path/to/icon.png
 - Scroll / trackpad / swipe: previous/next reel
 - Keyboard: `↑`/`↓`, `PageUp`/`PageDown`, `j`/`k`, `Space`
 - Tap video while playing: mute/unmute (remembered)
+- Double-tap video: play/pause
 - “Up next” pill: tap to advance
 - Top-right buttons:
   - Eye: hide/show captions (cinema mode)
